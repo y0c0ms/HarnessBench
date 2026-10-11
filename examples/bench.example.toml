@@ -1,0 +1,37 @@
+# agent-bench configuration. Nothing here is specific to a provider: point it at any
+# OpenAI-compatible endpoint (and optionally an Anthropic-compatible one for Claude Code).
+
+[provider]
+name = "my-provider"                              # label only, written into results
+model = "your-model-id"
+openai_base_url = "https://api.example.com/v1"    # must serve /v1/chat/completions and /v1/models
+# anthropic_base_url = "https://api.example.com"  # optional: enables the claude harness (serves /v1/messages)
+api_key_env = "AGB_PROVIDER_KEY"                  # NAME of the env var holding the key; the key is never written to disk
+
+[run]
+tasks_dir = "tasks"                 # one folder per task (see tasks/title-case)
+tasks = ["all"]                     # or a list of task folder names
+harnesses = []                       # empty: choose at start with the tick list; or list names, or pass --harness
+reps = 3
+max_sessions = 4                    # concurrent sessions across ALL harnesses; match your provider's limit
+timeout_s = 1500
+retry_failed = 0                    # extra attempts for a job whose first attempt failed
+work_dir = "runs"
+keep_workspaces = false
+# prompt = "..."                    # override the instruction given to every agent
+# grade_cmd = ["python3", "-m", "pytest", "-q"]
+
+# [binaries]                        # optional explicit executables (defaults: found on PATH)
+# omp = "/path/to/omp"
+# claude = "/path/to/claude"
+
+[tui]
+icons = "emoji"                     # or "ascii"
+
+# [judge]                           # optional qualitative judge, run after each grading
+# enabled = true
+# api = "openai"                    # or "anthropic"
+# base_url = "https://judge.example.com/v1"
+# model = "judge-model-id"
+# api_key_env = "AGB_JUDGE_KEY"
+# rubric = "rubric.md"              # optional; a built-in rubric is used otherwise

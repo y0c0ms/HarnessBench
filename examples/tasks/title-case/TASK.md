@@ -1,0 +1,1 @@
+`title_case(s)` in textutil.py must capitalise the first letter of each whitespace-separated word and leave every other character exactly as typed, including spacing. The current implementation is wrong. Fix textutil.py so the tests in test_textutil.py pass.

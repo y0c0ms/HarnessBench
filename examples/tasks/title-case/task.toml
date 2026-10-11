@@ -1,0 +1,2 @@
+description = "Fix a string helper: capitalise word starts only, keep spacing and the rest of each word."
+timeout_s = 900

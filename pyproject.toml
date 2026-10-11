@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-bench"
+version = "0.1.0"
+description = "Compare coding-agent harnesses (Pi, OpenCode, omp, Claude Code) on the same tasks, model and settings."
+requires-python = ">=3.11"
+dependencies = ["rich>=13"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+agent-bench = "agent_bench.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+agent_bench = ["*.py"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
