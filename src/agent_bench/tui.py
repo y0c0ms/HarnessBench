@@ -38,7 +38,7 @@ def render(state: State, cap: int, mode: str = "emoji"):
                          f"  ·  {elapsed // 60:02d}:{elapsed % 60:02d}")
 
     rows = Table.grid(padding=(0, 2))
-    rows.add_column(width=16)
+    rows.add_column(width=20)
     rows.add_column(width=BAR + 2)
     rows.add_column()
     for name, s in snap["per"].items():
@@ -52,7 +52,7 @@ def render(state: State, cap: int, mode: str = "emoji"):
         rows.add_row(Text(_label(state, name, mode), style="bold"), bar, counts)
 
     running = Table.grid(padding=(0, 2))
-    running.add_column(width=16)
+    running.add_column(width=20)
     running.add_column()
     running.add_column(justify="right")
     if snap["running"]:
@@ -64,7 +64,7 @@ def render(state: State, cap: int, mode: str = "emoji"):
         running.add_row(Text("idle", style="dim"), "", "")
 
     recent = Table.grid(padding=(0, 2))
-    recent.add_column(width=16)
+    recent.add_column(width=20)
     recent.add_column()
     recent.add_column()
     for r in snap["recent"]:

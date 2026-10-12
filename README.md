@@ -17,6 +17,25 @@ then compare pass rate, time, tokens, requests, and an optional judge score.
 > Tested on one Linux workstation (Fedora, bubblewrap 0.11) against one OpenAI-compatible gateway with 4 harnesses at
 > up to 12 concurrent sessions. Results: [RESULTS.md](RESULTS.md). Limits: see below.
 
+## Screens
+
+![Live panel during a run: one row per harness, jobs in flight, recent results](docs/agent-bench-live-panel.png)
+
+![Operator viewer: job table, job view, and settings](docs/agent-bench-viewer.gif)
+
+`agent-bench watch RUN_DIR -c bench.toml` opens the viewer on a run from another terminal. It only reads the run and
+writes kill requests or settings, so it cannot change a run's timings. The keys on each tab:
+
+| Key | Job table | Job view | Settings |
+|---|---|---|---|
+| `v` | view the highlighted running job | | |
+| `d` / `a` | next / previous running job | next / previous running job | |
+| `k` | kill it (asks for `y`) | kill it | |
+| `s` | open settings | | |
+| `↑` / `↓`, Enter, `x` | | | select, edit, unset a setting |
+| `b` / Esc | | back to the table | back to the table |
+| `q` | quit the viewer (the run keeps going) | same | quit (standalone) |
+
 ## Requirements
 
 - Linux with `bwrap` (bubblewrap). The sandbox is what makes runs isolated; there is no unsandboxed model mode.
@@ -173,6 +192,12 @@ run: no grading, no judge, and it is excluded from pass rates and counted separa
 
 Unit tests need no network. Integration tests use bubblewrap and a local mock provider, and are skipped if `bwrap`
 is missing. Adapter-config tests run only if the matching plugin files are present in `harnesses/`.
+
+## Where it was tested
+
+The published comparison in [RESULTS.md](RESULTS.md) ran six harnesses on the same ten tasks through one
+OpenAI-compatible gateway, with 6 valid runs per cell and the same model across harnesses. The numbers there are
+computed from the raw `results.jsonl` files.
 
 ## License
 

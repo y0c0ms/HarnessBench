@@ -48,6 +48,12 @@ class Harness:
             return "needs provider.anthropic_base_url (Anthropic-compatible endpoint)"
         return None
 
+    def install_roots(self, binary: str) -> list[str]:
+        """Directories the sandbox must expose read-only so the harness can run. Default: the executable's own
+        install tree. Override when the harness needs more (for example a whole virtualenv)."""
+        from . import sandbox
+        return sandbox.install_roots(binary)
+
     def write_config(self, home: pathlib.Path, provider, proxy_url: str, settings: dict) -> None:
         """Write this harness's config files under the private HOME. Must not contain the provider key.
         `settings` holds the values in effect (only the keys set); apply those in settings_support, ignore the rest."""

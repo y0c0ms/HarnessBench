@@ -1,4 +1,6 @@
 import types
+import pathlib
+import tempfile
 
 import pytest
 
@@ -14,7 +16,7 @@ class _H(Harness):
 
 def _cfg(attempts=1, retry_failed=0, reps=1, max_sessions=2):
     return types.SimpleNamespace(attempts=attempts, retry_failed=retry_failed, reps=reps, settings={},
-                                 max_sessions=max_sessions)
+                                 max_sessions=max_sessions, work_dir=pathlib.Path(tempfile.mkdtemp(prefix="agb-slots-")))
 
 
 def _task(name):

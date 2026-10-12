@@ -128,6 +128,28 @@ def test_anthropic_stream_counts_cached_input():
     assert u["prompt"] == 4812 and u["completion"] == 20 and u["cache_read"] == 4736
 
 
+def test_responses_usage_counts_cached_input_once():
+    usage = {"input_tokens": 1000, "output_tokens": 30,
+             "input_tokens_details": {"cached_tokens": 800}, "output_tokens_details": {"reasoning_tokens": 21}}
+    plain = json.dumps({"object": "response", "usage": usage}).encode()
+    stream = ('event: response.completed\ndata: ' + json.dumps({"type": "response.completed",
+              "response": {"usage": usage}}) + '\n\n').encode()
+    for body in (plain, stream):
+        assert proxy.parse_usage(body) == {"prompt": 1000, "completion": 30, "cache_read": 800, "cache_write": 0}
+
+
+def test_served_model_reads_each_wire_format():
+    chat = json.dumps({"model": "longcat-2.5-preview-free", "choices": []}).encode()
+    assert proxy.served_model(chat) == "longcat-2.5-preview-free"
+    anthropic = (b'data: {"type":"message_start","message":{"model":"claude-haiku-5-5"}}\n\n'
+                 b'data: {"type":"message_delta","usage":{"output_tokens":3}}\n\n')
+    assert proxy.served_model(anthropic) == "claude-haiku-5-5"
+    responses = ('event: response.completed\ndata: ' + json.dumps(
+        {"type": "response.completed", "response": {"model": "gpt-5", "usage": {}}})).encode()
+    assert proxy.served_model(responses) == "gpt-5"
+    assert proxy.served_model(json.dumps({"usage": {"prompt_tokens": 5}}).encode()) is None
+
+
 def test_missing_key_env_stops_proxy(tmp_path):
     rc = proxy.main(["--sock", str(tmp_path / "s"), "--out", str(tmp_path / "o"),
                      "--openai-base", "http://x/v1", "--key-env", "AGB_DEFINITELY_UNSET_VAR"])

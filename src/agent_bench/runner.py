@@ -11,6 +11,7 @@ from __future__ import annotations
 import concurrent.futures as cf
 import dataclasses
 import difflib
+import fcntl
 import json
 import os
 import pathlib
@@ -126,20 +127,25 @@ def _workspace_diff(starter: pathlib.Path, ws: pathlib.Path, skip: set[str]) -> 
 
 def _usage(capture: pathlib.Path) -> dict:
     n = p = c = cr = errors = rate_limited = 0
+    served: set[str] = set()
     for f in capture.glob("*.json"):
         d = json.loads(f.read_text())
-        if "/chat/completions" not in d["path"] and "/messages" not in d["path"]:
+        if not any(p in d["path"] for p in ("/chat/completions", "/messages", "/responses")):   # the model requests
             continue
         n += 1
         p += d["usage"]["prompt"]
         c += d["usage"]["completion"]
         cr += d["usage"].get("cache_read", 0)
+        if d.get("served_model"):
+            served.add(d["served_model"])
         if d["status"] != 200:
             errors += 1
         if d["status"] == 429 or "rate limit" in (d.get("response_error") or "").lower():   # responses only: request bodies quote the phrase
             rate_limited += 1
+    # What the provider said it served. More than one entry means the gateway moved the run to another model.
     return {"chat_requests": n, "prompt_tokens": p, "completion_tokens": c, "cache_read_tokens": cr,
-            "http_errors": errors, "rate_limited": rate_limited}
+            "http_errors": errors, "rate_limited": rate_limited,
+            "served_models": ",".join(sorted(served)) or None}
 
 
 def _start_proxy(cfg: Config, sock: pathlib.Path, capture: pathlib.Path) -> subprocess.Popen:
@@ -236,7 +242,7 @@ def run_one(cfg: Config, task: Task, harness: Harness, rep: int, attempt: int,
             inner_cmd = harness.command(binary, cfg.provider, cfg.prompt)
             inner = (f"{sys.executable} {sandbox.RELAY_PATH} {sandbox.RELAY_PORT} {sandbox.IO_DIR}/proxy.sock "
                      f"& sleep 0.5; exec " + " ".join(shlex.quote(a) for a in inner_cmd))
-            argv = sandbox.bwrap_argv(run_dir, io_dir, sandbox.install_roots(binary),
+            argv = sandbox.bwrap_argv(run_dir, io_dir, harness.install_roots(binary),
                                       os.path.expanduser("~"), ["sh", "-c", inner])
             # output goes straight to files, so the viewer can follow it live; the harness sees the same non-tty stdio
             out_f = open(run_dir / "harness.out", "w")
@@ -312,6 +318,23 @@ def _queued_kill_record(cfg: Config, task: Task, harness: Harness, rep: int) -> 
             "http_errors": 0, "rate_limited": 0, "run_dir": None}
 
 
+def acquire_slot(slot_dir: pathlib.Path, n: int, poll_s: float = 0.5):
+    """Blocks until one of n global session slots is free, then returns its open file (the slot is held while open).
+    Slots are flock()s on files in slot_dir, so every agent-bench process using the same work dir shares the cap:
+    a later run queues behind the runs already in flight and takes each slot as it frees. A dead process releases
+    its slots automatically."""
+    slot_dir.mkdir(parents=True, exist_ok=True)
+    while True:
+        for i in range(n):
+            fh = open(slot_dir / f"slot-{i}.lock", "a")
+            try:
+                fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                return fh
+            except BlockingIOError:
+                fh.close()
+        time.sleep(poll_s)
+
+
 def run_all(cfg: Config, tasks: list[Task], harnesses: list[Harness], run_root: pathlib.Path,
             state: State, log, judge_cfg=None, jobs: list[Job] | None = None) -> list[dict]:
     """Runs the planned jobs through a pool of cfg.max_sessions workers. Records are appended to
@@ -329,7 +352,7 @@ def run_all(cfg: Config, tasks: list[Task], harnesses: list[Harness], run_root: 
     by_t = {t.name: t for t in tasks}
     write_lock = threading.Lock()
 
-    def job(j: Job):
+    def _run_job(j: Job):
         state.begin(j)
         h, t = by_h[j.harness], by_t[j.task]
         kill_file = run_root / "control" / f"job-{j.id}.kill"
@@ -357,6 +380,13 @@ def run_all(cfg: Config, tasks: list[Task], harnesses: list[Harness], run_root: 
             f"{'KILLED' if final['killed'] else ('PASS' if final['pass'] else 'FAIL')} {final['wall_s']}s"
             + (f" error={final['error']}" if final["error"] else ""))
         return final
+
+    def job(j: Job):
+        slot = acquire_slot(cfg.work_dir / "slots", cfg.max_sessions)
+        try:
+            return _run_job(j)
+        finally:
+            slot.close()
 
     with cf.ThreadPoolExecutor(max_workers=cfg.max_sessions) as ex:
         return list(ex.map(job, jobs))

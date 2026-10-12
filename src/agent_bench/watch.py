@@ -33,7 +33,7 @@ def _tokens(run_dir: pathlib.Path | None) -> dict:
             d = json.loads(f.read_text())
         except (OSError, ValueError):
             continue
-        if "/chat/completions" in d.get("path", "") or "/messages" in d.get("path", ""):
+        if any(p in d.get("path", "") for p in ("/chat/completions", "/messages", "/responses")):
             out["requests"] += 1
             out["prompt"] += d["usage"]["prompt"]
             out["completion"] += d["usage"]["completion"]
@@ -99,26 +99,39 @@ def _mmss(s) -> str:
     return f"{s // 60:02d}:{s % 60:02d}"
 
 
-def table_lines(snap: dict, sel_id: int | None) -> list[str]:
+def _job_row(j: dict, sel_id: int | None) -> str:
+    mark = ">" if j["id"] == sel_id else " "
+    status = j["status"] + (" (kill requested)" if j["kill_requested"] and j["status"] == "running" else "")
+    tok = j["tokens"]
+    tok_s = f"{tok['prompt']}/{tok['completion']}" if tok else ""
+    el = _mmss(j.get("elapsed")) if j["status"] == "running" else ("" if j["status"] == "queued" else
+                                                                     _mmss(j.get("wall_s")))
+    att = "" if j.get("attempt") is None else str(j["attempt"])
+    return (f"{mark} {j['id']:>3} {j['harness']:<10} {j['task']:<6} {j['rep']:>3}  {status:<10} "
+            f"{att:>7} {el:>8} {tok_s:>14}")
+
+
+def table_lines(snap: dict, sel_id: int | None, max_lines: int | None = None) -> list[str]:
+    """The job table. With max_lines, only as many job rows as fit are shown, a window that keeps the selected job
+    (or the first running one) visible, so the highlight never scrolls out of view."""
     jobs = snap["jobs"]
     c = {k: sum(1 for j in jobs if j["status"] == k) for k in ("queued", "running", "pass", "fail", "killed")}
-    lines = [f"agent-bench watch  {pathlib.Path(snap['run_root']).name}",
-             f"done {c['pass'] + c['fail'] + c['killed']}/{len(jobs)}   running {c['running']}   queued {c['queued']}"
-             f"   passed {c['pass']}   failed {c['fail']}   killed {c['killed']}",
-             "", f"{'':1} {'#':>3} {'harness':<10} {'task':<6} {'rep':>3}  {'status':<10} {'attempt':>7} "
-                 f"{'elapsed':>8} {'tokens p/c':>14}"]
-    for j in jobs:
-        mark = ">" if j["id"] == sel_id else " "
-        status = j["status"] + (" (kill requested)" if j["kill_requested"] and j["status"] == "running" else "")
-        tok = j["tokens"]
-        tok_s = f"{tok['prompt']}/{tok['completion']}" if tok else ""
-        el = _mmss(j.get("elapsed")) if j["status"] == "running" else ("" if j["status"] == "queued" else
-                                                                         _mmss(j.get("wall_s")))
-        att = "" if j.get("attempt") is None else str(j["attempt"])
-        lines.append(f"{mark} {j['id']:>3} {j['harness']:<10} {j['task']:<6} {j['rep']:>3}  {status:<10} "
-                     f"{att:>7} {el:>8} {tok_s:>14}")
-    lines += ["", "v view   d / a next / previous running   k kill   s settings   q quit viewer (the run keeps going)"]
-    return lines
+    head = [f"agent-bench watch  {pathlib.Path(snap['run_root']).name}",
+            f"done {c['pass'] + c['fail'] + c['killed']}/{len(jobs)}   running {c['running']}   queued {c['queued']}"
+            f"   passed {c['pass']}   failed {c['fail']}   killed {c['killed']}",
+            "", f"{'':1} {'#':>3} {'harness':<10} {'task':<6} {'rep':>3}  {'status':<10} {'attempt':>7} "
+                f"{'elapsed':>8} {'tokens p/c':>14}"]
+    foot = ["", "v view   d / a next / previous running   k kill   s settings   q quit viewer (the run keeps going)"]
+    rows = [_job_row(j, sel_id) for j in jobs]
+    room = len(rows) if max_lines is None else max(max_lines - len(head) - len(foot), 1)
+    if room < len(rows):
+        anchor = next((i for i, j in enumerate(jobs) if j["id"] == sel_id), None)
+        if anchor is None:
+            anchor = next((i for i, j in enumerate(jobs) if j["status"] == "running"), 0)
+        start = max(0, min(anchor - room // 2, len(rows) - room))
+        head[2] = f"jobs {start + 1}-{start + room} of {len(rows)}"
+        rows = rows[start:start + room]
+    return head + rows + foot
 
 
 def view_lines(job: dict, snap: dict) -> list[str]:
@@ -249,7 +262,8 @@ def run_tui(run_root: pathlib.Path | None, cfg=None) -> None:
             elif mode == "view" and sel_job:
                 lines = view_lines(sel_job, snap)
             else:
-                lines = table_lines(snap, sel_job["id"] if sel_job else None) if snap else ["no run open"]
+                lines = (table_lines(snap, sel_job["id"] if sel_job else None, max_lines=stdscr.getmaxyx()[0] - 2)
+                         if snap else ["no run open"])
             if confirm is not None:
                 lines = [f"Kill job {confirm['id']} ({confirm['harness']} {confirm['task']} rep {confirm['rep']})?"
                          " press y to confirm, any other key cancels"] + lines
